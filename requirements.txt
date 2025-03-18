@@ -1,3 +1,5 @@
 numpy
 tinygrad
 tinytag
+soundfile
+matplotlib
