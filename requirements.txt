@@ -1,5 +1,7 @@
 numpy
-tinygrad
 tinytag
 soundfile
 matplotlib
+torch
+datasets
+librosa
