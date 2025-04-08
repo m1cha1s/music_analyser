@@ -1,75 +1,56 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from tinygrad import Tensor, nn, Device
 import numpy as np
 from datetime import datetime
 import matplotlib.pyplot as plt
 
-class CNNMusicRecogniser(nn.Module):
+class CNNMusicRecogniser:
     def __init__(self, num_classes=10):
-        super(CNNMusicRecogniser, self).__init__()
-        #1st convolutional block
+
         self.conv1 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        #2nd convolutional block
         self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)
+        self.bn2 = nn.BatchNorm(64)
 
-        #3rd conv block
         self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
-        self.bn3 = nn.BatchNorm2d(128)
+        self.bn3 = nn.BatchNorm(128)
 
-        #128x128 input = map size 16x16
         self.fc1 = nn.Linear(128 * 16 * 16, 128)
-        self.dropout = nn.Dropout(0.5)
         self.fc2 = nn.Linear(128, num_classes)
 
-    def forward(self, x, y=None):
-        #conv block 1
-        x = self.conv1(x) #applies first convolution
-        x = F.relu(x) # ReLU function increases the complexity of the neural network by introducing non-linearity, which allows the network to learn more complex representations of the data. The ReLU function is defined as f(x) = max(0, x), which sets all negative values to zero.
-        x = self.pool(x) # reduces size using max pooling, (if we have 4x4 block of values, it makes 2x2 block where for every 2x2 array from 4x4 block takes the highest value)
-        x = self.bn1(x) #normalizes the output
+    def __call__(self, x: Tensor) -> Tensor:
+        x = self.conv1(x)
+        x = x.relu6() 
+        x = x.max_pool2d((2,2), stride=2)
+        x = self.bn1(x)
 
-        #conv block 2
         x = self.conv2(x)
-        x = F.relu(x)
-        x = self.pool(x)
+        x = x.relu6()
+        x = x.max_pool2d((2,2), stride=2)
         x = self.bn2(x)
 
-        #conv block 3
         x = self.conv3(x)
-        x = F.relu(x)
-        x = self.pool(x)
+        x = x.relu6()
+        x = x.max_pool2d((2,2), stride=2)
         x = self.bn3(x)
 
-        #flattenign the tensor
         x = x.view(x.size(0), -1)
 
-        #connect the layers
         x = self.fc1(x)
-        x = F.relu(x)
-        x = self.dropout(x)
+        x = x.relu6()
+        x = x.dropout(p=0.5)
         x = self.fc2(x)
 
-        x = F.softmax(x, dim=-1)
+        x = x.softmax()
 
-        if y is None:
-            loss = None
-        else:
-            loss_mlp = nn.BCELoss()
-            loss = loss_mlp(x, y)
+        return x 
 
-        return x, loss
-
-device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+device = Device.DEFAULT
 split = 0.9
 batch_size = 1
 
-genres = np.load("genres.npy").astype("float32")
-samples = np.load("samples.npy").astype("float32")
+genres = Tensor(np.load("genres.npy").astype("float32"), device)
+samples = Tensor(np.load("samples.npy").astype("float32"), device)
 
 n = int(len(genres)*split)
 
@@ -85,19 +66,18 @@ assert(len(train_output)+len(val_output) == len(genres))
 def get_batch(*, train = False):
     input_data = train_input if train else val_input
     output_data = train_output if train else val_output
-    ix = torch.randint(len(input_data), (batch_size,))
-    iy = torch.randint(len(output_data), (batch_size,))
-    x = torch.stack([torch.from_numpy(input_data[x]) for x in ix]).to(device)
-    y = torch.stack([torch.from_numpy(output_data[y]) for y in iy]).to(device)
+    ix = Tensor.randint(batch_size, high=input_data.shape[0])
+    iy = Tensor.randint(batch_size, high=output_data.shape[0])
+    x = Tensor.stack(*[input_data[x] for x in ix], dim=0)
+    y = Tensor.stack(*[output_data[y] for y in iy], dim=0)
 
-    x.unsqueeze_(1)
-    #y.unsqueeze_(1)
+    x = x.unsqueeze(0)
 
     return x, y
 
 eval_iters = 200
 
-@torch.no_grad
+# @torch.no_grad
 def estimate_loss(model):
     out = {}
     model.eval()
@@ -117,25 +97,21 @@ def train(num_classes = 10,
           max_iters = 2000):
     print(f"Training on {device}")
 
-    m = CNNMusicRecogniser(num_classes=num_classes).to(device)
-    optim = torch.optim.AdamW(m.parameters(), lr=learning_rate)
-    m.train()
+    m = CNNMusicRecogniser(num_classes=num_classes)
+    optim = nn.optim.AdamW(nn.state.get_parameters(m), lr=learning_rate)
 
-    for iter in range(max_iters):
-        if iter % eval_interval == 0:
-            losses = estimate_loss(m)
-            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+    def step():
+        Tensor.training = True
         xb, yb = get_batch(train=True)
 
-        props, loss = m(xb, yb)
-
-        optim.zero_grad(set_to_none=True)
-        loss.backward()
+        optim.zero_grad()
+        loss = m(xb).cross_entropy(yb).backward()
         optim.step()
 
-    m.eval()
+#    torch.save(m, f"model_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.model")
+    import timeit
 
-    torch.save(m, f"model_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.model")
+    print(timeit.repeat(step, repeat=5, number=1))
 
     return m
 
@@ -148,10 +124,3 @@ if __name__ == "__main__":
     for _ in range(1):
         x, y = get_batch(train=False)
         output = m(x)
-
-
-        print(f"Output: {output}")
-        print(f"Expected output: {y}")
-
-        plt.bar(range(10), output[0].cpu().detach().numpy()[0])
-        plt.show()
