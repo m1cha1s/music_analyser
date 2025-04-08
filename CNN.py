@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from datetime import datetime
+import matplotlib.pyplot as plt
 
 class CNNMusicRecogniser(nn.Module):
     def __init__(self, num_classes=10):
@@ -16,8 +18,8 @@ class CNNMusicRecogniser(nn.Module):
         self.bn2 = nn.BatchNorm2d(64)
 
         #3rd conv block
-        self.conv3 = nn.Conv2d(in_channels=64, out_channels=124, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(128)
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
 
         #128x128 input = map size 16x16
         self.fc1 = nn.Linear(128 * 16 * 16, 128)
@@ -25,10 +27,8 @@ class CNNMusicRecogniser(nn.Module):
         self.fc2 = nn.Linear(128, num_classes)
 
     def forward(self, x, y=None):
-        # print(x[0][0].shape, x)
         #conv block 1
         x = self.conv1(x) #applies first convolution
-        print(x.shape)
         x = F.relu(x) # ReLU function increases the complexity of the neural network by introducing non-linearity, which allows the network to learn more complex representations of the data. The ReLU function is defined as f(x) = max(0, x), which sets all negative values to zero.
         x = self.pool(x) # reduces size using max pooling, (if we have 4x4 block of values, it makes 2x2 block where for every 2x2 array from 4x4 block takes the highest value)
         x = self.bn1(x) #normalizes the output
@@ -54,16 +54,19 @@ class CNNMusicRecogniser(nn.Module):
         x = self.dropout(x)
         x = self.fc2(x)
 
+        x = F.softmax(x, dim=-1)
+
         if y is None:
             loss = None
         else:
-            loss = F.cross_entropy(x, y)
+            loss_mlp = nn.BCELoss()
+            loss = loss_mlp(x, y)
 
         return x, loss
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
 split = 0.9
-batch_size = 4
+batch_size = 1
 
 genres = np.load("genres.npy").astype("float32")
 samples = np.load("samples.npy").astype("float32")
@@ -87,6 +90,9 @@ def get_batch(*, train = False):
     x = torch.stack([torch.from_numpy(input_data[x]) for x in ix]).to(device)
     y = torch.stack([torch.from_numpy(output_data[y]) for y in iy]).to(device)
 
+    x.unsqueeze_(1)
+    #y.unsqueeze_(1)
+
     return x, y
 
 eval_iters = 200
@@ -106,9 +112,10 @@ def estimate_loss(model):
     return out
 
 def train(num_classes = 10,
-          learning_rate = 0.01,
+          learning_rate = 0.001,
           eval_interval = 10,
-          max_iters = 1000):
+          max_iters = 2000):
+    print(f"Training on {device}")
 
     m = CNNMusicRecogniser(num_classes=num_classes).to(device)
     optim = torch.optim.AdamW(m.parameters(), lr=learning_rate)
@@ -130,11 +137,21 @@ def train(num_classes = 10,
 
     torch.save(m, f"model_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.model")
 
+    return m
+
 #test with dummy input
 if __name__ == "__main__":
-    train(num_classes = 10)
+    m = train(num_classes = 10)
 
-#dummy input tensor [batch_size, channels, height, width]
-dummy_input = torch.randn(1, 1, 128, 128)
-output = model(dummy_input)
-print("Output shape:", output.shape) # [1, num_classes]
+    #dummy input tensor [batch_size, channels, height, width]
+    # dummy_input = torch.randn(1, 1, 128, 128).to(device)
+    for _ in range(1):
+        x, y = get_batch(train=False)
+        output = m(x)
+
+
+        print(f"Output: {output}")
+        print(f"Expected output: {y}")
+
+        plt.bar(range(10), output[0].cpu().detach().numpy()[0])
+        plt.show()
