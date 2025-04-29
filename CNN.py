@@ -1,9 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-from datetime import datetime
-import matplotlib.pyplot as plt
 
 class CNNMusicRecogniser(nn.Module):
     def __init__(self, num_classes=10):
@@ -54,6 +51,8 @@ class CNNMusicRecogniser(nn.Module):
         x = self.dropout(x)
         x = self.fc2(x)
 
+#        print(x)
+
         x = F.softmax(x, dim=-1)
 
         if y is None:
@@ -64,94 +63,3 @@ class CNNMusicRecogniser(nn.Module):
 
         return x, loss
 
-device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
-split = 0.9
-batch_size = 1
-
-genres = np.load("genres.npy").astype("float32")
-samples = np.load("samples.npy").astype("float32")
-
-n = int(len(genres)*split)
-
-train_input = samples[:n]
-val_input = samples[n:]
-
-train_output = genres[:n]
-val_output = genres[n:]
-
-assert(len(train_input)+len(val_input) == len(samples))
-assert(len(train_output)+len(val_output) == len(genres))
-
-def get_batch(*, train = False):
-    input_data = train_input if train else val_input
-    output_data = train_output if train else val_output
-    ix = torch.randint(len(input_data), (batch_size,))
-    iy = torch.randint(len(output_data), (batch_size,))
-    x = torch.stack([torch.from_numpy(input_data[x]) for x in ix]).to(device)
-    y = torch.stack([torch.from_numpy(output_data[y]) for y in iy]).to(device)
-
-    x.unsqueeze_(1)
-    #y.unsqueeze_(1)
-
-    return x, y
-
-eval_iters = 200
-
-@torch.no_grad
-def estimate_loss(model):
-    out = {}
-    model.eval()
-    for split in [True, False]:
-        losses = torch.zeros(eval_iters)
-        for k in range(eval_iters):
-            X, Y = get_batch(train=split)
-            props, loss = model(X, Y)
-            losses[k] = loss.item()
-        out['train' if split else 'val'] = losses.mean()
-    model.train()
-    return out
-
-def train(num_classes = 10,
-          learning_rate = 0.001,
-          eval_interval = 10,
-          max_iters = 2000):
-    print(f"Training on {device}")
-
-    m = CNNMusicRecogniser(num_classes=num_classes).to(device)
-    optim = torch.optim.AdamW(m.parameters(), lr=learning_rate)
-    m.train()
-
-    for iter in range(max_iters):
-        if iter % eval_interval == 0:
-            losses = estimate_loss(m)
-            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-        xb, yb = get_batch(train=True)
-
-        props, loss = m(xb, yb)
-
-        optim.zero_grad(set_to_none=True)
-        loss.backward()
-        optim.step()
-
-    m.eval()
-
-    torch.save(m, f"model_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.model")
-
-    return m
-
-#test with dummy input
-if __name__ == "__main__":
-    m = train(num_classes = 10)
-
-    #dummy input tensor [batch_size, channels, height, width]
-    # dummy_input = torch.randn(1, 1, 128, 128).to(device)
-    for _ in range(1):
-        x, y = get_batch(train=False)
-        output = m(x)
-
-
-        print(f"Output: {output}")
-        print(f"Expected output: {y}")
-
-        plt.bar(range(10), output[0].cpu().detach().numpy()[0])
-        plt.show()
