@@ -89,7 +89,7 @@ if __name__ == "__main__":
     num_classes = 10
     learning_rate = float(args.learning_rate)
     eval_interval = 10
-    max_iters = args.iters
+    max_iters = int(args.iters)
 
     print(f"Training on {device}")
 
