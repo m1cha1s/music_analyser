@@ -64,26 +64,30 @@ def audio_callback(indata, outdata, frames, time, status):
     if status and not getattr(audio_callback, 'warned', False):
         print(status)
         audio_callback.warned = True
-    audio = indata[:, 0]
+    audio = indata[:, 0] # extract mono audio
     # Filtering
-    y = signal.sosfilt(sos_hp, audio)
-    y = signal.sosfilt(sos_notch, y)
-    y = signal.sosfilt(sos_lp, y)
+    y = signal.sosfilt(sos_hp, audio) #high pass filter at 100hz
+    y = signal.sosfilt(sos_notch, y) #narrow notch filters at 50,100,150hz
+    y = signal.sosfilt(sos_lp, y) #low pass filter at 15khz
     # Noise reduction & compression
     y = reduce_noise_librosa(y, noise_thresh, n_fft, hop_length)
     y = compress(y)
     # Mute output
     outdata[:] = 0
     # Buffer for mel-spectrogram
-    audio_buffer.append(y)
+    audio_buffer.append(y) #store each cleaned block in a "deque"
     # Prepare FFT bars
+    # Takes an n_fft-point FFT, converts to dB, normalizes into [0,1].
+    # Splits the spectrum into n_bars equal-width bins.
+    # Averages each bin to drive the bar heights in the visualization.
     fft = np.abs(np.fft.rfft(y, n=n_fft))
     fft_db = 20 * np.log10(fft + 1e-6)
     fft_db_norm = np.clip(fft_db + max_db, 0, max_db) / max_db
     bins = np.array_split(fft_db_norm, n_bars)
     current_bar_vals = [float(np.mean(b)) for b in bins]
 
-# Visualization: bar FFT and timer
+# Visualization: bar FFT and timer, runs window for 60s or elapse
+
 def run_visualization():
     global bar_width, current_bar_vals
     width, height = 800, 600
@@ -107,7 +111,8 @@ def run_visualization():
 
     rl.CloseWindow()
 
-def load_model(model_name: str):
+#loads pytorch to device, prints if file is CUDA/MPS/CPU
+def load_model(model_name: str): 
     print(f"Loading {model_name} to {device}")
     return torch.load(model_name, weights_only=False).to(device)
 
@@ -115,7 +120,7 @@ if __name__ == "__main__":
     m = load_model(argv[1])
     m.eval()
 
-    # Calibrate noise
+    # noise-floor calibrate noise
     print("Calibrating noise floor... (silence)")
     y_init = sd.rec(int(default_samplerate * 1.0), samplerate=default_samplerate, channels=1)
     sd.wait()
@@ -134,11 +139,12 @@ if __name__ == "__main__":
     S_dB = librosa.power_to_db(S, ref=np.max)
     S_dB_fixed = librosa.util.fix_length(S_dB, size=target_frames, axis=1)
 
+    #prepare tensor and run model
     spectrogram = torch.from_numpy(np.array([S_dB_fixed])).float().to(device)
     spectrogram.unsqueeze_(1)
 
     print(spectrogram.shape)
-
+    #sort and print genre scores
     genres = ["blues", "classical", "country", "disco", "hiphop", "jazz", "metal", "pop", "reggae", "rock"]
     res = m(spectrogram)[0].cpu().detach().numpy()[0]
     print(res)
@@ -148,7 +154,7 @@ if __name__ == "__main__":
 
     for r in sorted_results:
         print(f"{r[0]}: {r[1]}")
-
+    #save spectrogram for later
     np.save("samples.npy", S_dB_fixed)
     print(f"Saved mel-spectrogram: {S_dB_fixed.shape} -> samples.npy")
 
