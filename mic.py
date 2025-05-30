@@ -5,12 +5,16 @@ import scipy.signal as signal
 import librosa
 from collections import deque
 import raylib as rl  # C binding for raylib
+import torch
+from sys import argv
+
+device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
 
 # Audio parameters
 default_samplerate = 44100
 block_size = 2048
 n_fft = block_size
-hop_length = block_size // 2 
+hop_length = block_size // 2
 record_duration = 60  # seconds
 
 target_frames = 130  # fixed time frames for mel-spectrogram
@@ -103,7 +107,14 @@ def run_visualization():
 
     rl.CloseWindow()
 
+def load_model(model_name: str):
+    print(f"Loading {model_name} to {device}")
+    return torch.load(model_name, weights_only=False).to(device)
+
 if __name__ == "__main__":
+    m = load_model(argv[1])
+    m.eval()
+
     # Calibrate noise
     print("Calibrating noise floor... (silence)")
     y_init = sd.rec(int(default_samplerate * 1.0), samplerate=default_samplerate, channels=1)
@@ -122,8 +133,26 @@ if __name__ == "__main__":
                                        n_mels=n_mels, n_fft=2048, hop_length=512)
     S_dB = librosa.power_to_db(S, ref=np.max)
     S_dB_fixed = librosa.util.fix_length(S_dB, size=target_frames, axis=1)
+
+    spectrogram = torch.from_numpy(np.array([S_dB_fixed])).float().to(device)
+    spectrogram.unsqueeze_(1)
+
+    print(spectrogram.shape)
+
+    genres = ["blues", "classical", "country", "disco", "hiphop", "jazz", "metal", "pop", "reggae", "rock"]
+    res = m(spectrogram)[0].cpu().detach().numpy()[0]
+    print(res)
+
+    results = [(genres[x], res[x]) for x in range(len(genres))]
+    sorted_results = sorted(results, key=lambda x: x[1])
+
+    for r in sorted_results:
+        print(f"{r[0]}: {r[1]}")
+
     np.save("samples.npy", S_dB_fixed)
     print(f"Saved mel-spectrogram: {S_dB_fixed.shape} -> samples.npy")
+
+
     # -- Visual check --
     # Load and plot the saved spectrogram to verify
     try:
