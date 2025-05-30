@@ -110,6 +110,7 @@ def run_visualization():
 def load_model(model_name: str):
     print(f"Loading {model_name} to {device}")
     return torch.load(model_name, weights_only=False, map_location=torch.device(device)).to(device)
+    return torch.load(model_name, weights_only=False, map_location=torch.device(device)).to(device)
 
 if __name__ == "__main__":
     m = load_model(argv[1])
