@@ -109,7 +109,7 @@ def run_visualization():
 
 def load_model(model_name: str):
     print(f"Loading {model_name} to {device}")
-    return torch.load(model_name, weights_only=False).to(device)
+    return torch.load(model_name, weights_only=False, map_location=torch.device(device)).to(device)
 
 if __name__ == "__main__":
     m = load_model(argv[1])
@@ -149,23 +149,23 @@ if __name__ == "__main__":
     for r in sorted_results:
         print(f"{r[0]}: {r[1]}")
 
-    np.save("samples.npy", S_dB_fixed)
+    np.save("recorded.npy", S_dB_fixed)
     print(f"Saved mel-spectrogram: {S_dB_fixed.shape} -> samples.npy")
 
 
-    # -- Visual check --
-    # Load and plot the saved spectrogram to verify
-    try:
-        import matplotlib.pyplot as plt
-        import librosa.display
-        spec = np.load("samples.npy")
-        plt.figure(figsize=(8, 4))
-        librosa.display.specshow(spec, sr=default_samplerate, hop_length=512,
-                                 x_axis='time', y_axis='mel', cmap='viridis')
-        plt.colorbar(format='%+2.0f dB')
-        plt.title('Recorded Mel-Spectrogram')
-        plt.tight_layout()
-        plt.show()
-    except ImportError:
-        print("matplotlib or librosa.display not available for plotting.")
-    print(f"Saved mel-spectrogram: {S_dB_fixed.shape} -> samples.npy")
+#    # -- Visual check --
+#    # Load and plot the saved spectrogram to verify
+#    try:
+#        import matplotlib.pyplot as plt
+#        import librosa.display
+#        spec = np.load("recorded.npy")
+#        plt.figure(figsize=(8, 4))
+#        librosa.display.specshow(spec, sr=default_samplerate, hop_length=512,
+#                                 x_axis='time', y_axis='mel', cmap='viridis')
+#        plt.colorbar(format='%+2.0f dB')
+#        plt.title('Recorded Mel-Spectrogram')
+#        plt.tight_layout()
+#        plt.show()
+#    except ImportError:
+#        print("matplotlib or librosa.display not available for plotting.")
+#    print(f"Saved mel-spectrogram: {S_dB_fixed.shape} -> samples.npy")

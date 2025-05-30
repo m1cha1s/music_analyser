@@ -23,7 +23,7 @@ def process(sample):
     # g = np.zeros(genre_count)
     # g[sample['genre']] = 1
 
-    # print(S_dB_fixed.shape, g.shape)
+#    print(S_dB_fixed.shape)
     # print(S_dB_fixed, g)
 
     return S_dB_fixed
@@ -37,5 +37,6 @@ if __name__ == '__main__':
     with Pool(16) as p:
         res = p.map(process, dataset['train'])
         genre = [genre_dist(x['genre']) for x in dataset['train']]
-        np.save("samples", res)
-        np.save("genres", genre)
+#        print(res, np.array(res))
+        np.save("samples", np.array(res))
+        np.save("genres", np.array(genre))

@@ -8,16 +8,23 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import argparse as ap
 from CNN import *
+from random import shuffle
 
 device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
-split = 0.9
+split = 0.8
 batch_size = 1
 
 genres = np.load("genres.npy").astype("float32")
 samples = np.load("samples.npy").astype("float32")
 
-np.random.shuffle(genres)
-np.random.shuffle(samples)
+print(samples.shape)
+
+data = [[genres[x], samples[x]] for x in range(len(genres))]
+
+shuffle(data)
+
+genres = [x[0] for x in data]
+samples = [x[1] for x in data]
 
 n = int(len(genres)*split)
 
@@ -34,10 +41,11 @@ assert(len(train_output)+len(val_output) == len(genres))
 def get_batch(*, train = False):
     input_data = train_input if train else val_input
     output_data = train_output if train else val_output
-    ix = torch.randint(len(input_data), (batch_size,))
-    iy = torch.randint(len(output_data), (batch_size,))
-    x = torch.stack([torch.from_numpy(input_data[x]) for x in ix]).to(device)
-    y = torch.stack([torch.from_numpy(output_data[y]) for y in iy]).to(device)
+#    print(len(input_data), len(output_data))
+    assert len(input_data) == len(output_data)
+    i = torch.randint(len(input_data), (batch_size,))
+    x = torch.stack([torch.from_numpy(input_data[x]) for x in i]).to(device)
+    y = torch.stack([torch.from_numpy(output_data[y]) for y in i]).to(device)
 
     x.unsqueeze_(1)
     #y.unsqueeze_(1)
@@ -99,7 +107,7 @@ if __name__ == "__main__":
         m = torch.load(args.model, weights_only=False)
     else:
         m = CNNMusicRecogniser(num_classes=num_classes).to(device)
-    optim = torch.optim.AdamW(m.parameters(), lr=learning_rate)
+    optim = torch.optim.RMSprop(m.parameters(), lr=learning_rate)
     m.train()
     try:
         for iter in range(max_iters):
