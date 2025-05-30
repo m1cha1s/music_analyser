@@ -1,7 +1,9 @@
 numpy
-tinytag
 soundfile
 matplotlib
 torch
 datasets
 librosa
+sounddevice 
+scipy  
+raylib

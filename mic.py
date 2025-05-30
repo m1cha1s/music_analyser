@@ -10,11 +10,11 @@ import raylib as rl  # C binding for raylib
 default_samplerate = 44100
 block_size = 2048
 n_fft = block_size
-hop_length = block_size // 2
+hop_length = block_size // 2 
 record_duration = 60  # seconds
 
 target_frames = 130  # fixed time frames for mel-spectrogram
-n_mels = 128         # mel bands
+n_mels = 128         # number of mel bands
 
 # Visualization parameters
 n_bars = 64  # Number of bars in the FFT display
@@ -24,23 +24,23 @@ current_bar_vals = [0.0] * n_bars  # persistent bar values
 
 audio_buffer = deque()  # store processed audio blocks for mel-spectrogram
 
-# Design filters
-def design_filters(fs):
-    sos_hp = signal.butter(4, 100, btype='highpass', fs=fs, output='sos')
-    sos_lp = signal.butter(4, 15000, btype='lowpass', fs=fs, output='sos')
-    freqs = [50, 100, 150]
-    q = 30.0
-    sos_notch = np.vstack([signal.tf2sos(*signal.iirnotch(f, Q=q, fs=fs)) for f in freqs])
+# Design filters sub 100Hz rumble, 50Hz,100Hz,150Hz hum cut off, 15kHz butterworth cutoff
+def design_filters(fs): 
+    sos_hp = signal.butter(4, 100, btype='highpass', fs=fs, output='sos') #High-pass butterworth, 4th order cutoff at 100Hz 
+    sos_lp = signal.butter(4, 15000, btype='lowpass', fs=fs, output='sos') #Low-pass butterworth, 4th order cutoff at 15kHz 
+    freqs = [50, 100, 150] #Three IIR 50Hz, 100Hz, 150Hz (IIR-very narrow stop-band)
+    q = 30.0 #quality factor 
+    sos_notch = np.vstack([signal.tf2sos(*signal.iirnotch(f, Q=q, fs=fs)) for f in freqs]) #second-order-section (SOS), for each notch [50,100,150], iirnotch gives 2nd order filter
     return sos_hp, sos_notch, sos_lp
 
 # Estimate noise threshold
-def estimate_noise_threshold(y_init, n_fft, hop_length, n_std_thresh=1.5):
-    D = librosa.stft(y_init, n_fft=n_fft, hop_length=hop_length)
+def estimate_noise_threshold(y_init, n_fft, hop_length, n_std_thresh=1.5): #noise-floor calibration, calculates mean noise in 1s and then multiplies 1.5x that noise and cut's off 
+    D = librosa.stft(y_init, n_fft=n_fft, hop_length=hop_length) #short fourier transform
     noise_mean = np.mean(np.abs(D), axis=1, keepdims=True)
     return noise_mean * n_std_thresh
 
 # Spectral noise reduction
-def reduce_noise_librosa(y, noise_thresh, n_fft, hop_length):
+def reduce_noise_librosa(y, noise_thresh, n_fft, hop_length): #leaving "louder" musical content
     D = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
     S, phase = np.abs(D), np.angle(D)
     mask = S >= noise_thresh
@@ -48,13 +48,13 @@ def reduce_noise_librosa(y, noise_thresh, n_fft, hop_length):
     return librosa.istft(D_clean, hop_length=hop_length)
 
 # Simple compressor
-def compress(audio, threshold=-20.0, ratio=2.0, makeup_gain=1.0, eps=1e-6):
+def compress(audio, threshold=-20.0, ratio=2.0, makeup_gain=1.0, eps=1e-6): #"frequency peaks are softer" 
     rms = np.sqrt(np.mean(audio**2) + eps)
     db = 20 * np.log10(rms + eps)
     gain_db = (threshold + (db - threshold) / ratio - db) if db > threshold else 0
     return audio * (10 ** (gain_db / 20.0)) * makeup_gain
 
-# Audio processing callback
+# Audio processing callback, cleans up the signal, mutes output preventing feeding back, reads ram, computes Real time FFT
 def audio_callback(indata, outdata, frames, time, status):
     global sos_hp, sos_notch, sos_lp, noise_thresh, current_bar_vals, audio_buffer
     if status and not getattr(audio_callback, 'warned', False):
